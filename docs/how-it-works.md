@@ -44,6 +44,36 @@ From that window you can:
 - switch to a running profile
 - delete a profile
 - store encrypted credentials
+- search/filter profiles
+- toggle between dark and light themes (auto-detects Windows setting)
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|---------|--------|
+| `Enter` | Open selected profile |
+| `Delete` | Delete selected profile |
+| `Ctrl+N` | Create new profile |
+| `Ctrl+F` | Focus search box |
+| `Escape` | Clear search / Close window |
+| `Down Arrow` | Navigate from search to list |
+
+### Toast Notifications
+
+The UI shows toast notifications when:
+- A profile is opened
+- A profile is switched
+- A profile is created
+- A profile is deleted
+- Credentials are saved
+- An error occurs
+
+### Right-Click Context Menu
+
+Right-click on a profile to access:
+- Open
+- Switch To
+- Delete
 
 Double-clicking a profile opens it.
 

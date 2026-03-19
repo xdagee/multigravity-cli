@@ -8,7 +8,7 @@
 
 | File | Purpose |
 |------|---------|
-| `multigravity.ps1` | Main CLI entry point (1162 lines). Contains all commands, UI, and profile logic. |
+| `multigravity.ps1` | Main CLI entry point (~1310 lines). Contains all commands, UI, and profile logic. |
 | `multigravity.core.psm1` | PowerShell module with shared helper functions. |
 | `multigravity.cmd` | Thin command wrapper for launching the PowerShell script. |
 | `install-windows.ps1` | Installs launcher to user-local Windows location. |

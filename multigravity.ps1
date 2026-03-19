@@ -767,26 +767,169 @@ function Prompt-NewProfileName {
   )
 }
 
+function Get-SystemDarkMode {
+  try {
+    $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+    $value = Get-ItemProperty -Path $path -Name 'AppsUseLightTheme' -ErrorAction Stop
+    return $value.AppsUseLightTheme -eq 0
+  } catch {
+    return $false
+  }
+}
+
+$LightTheme = @{
+  FormBg = [System.Drawing.Color]::FromArgb(255, 255, 255)
+  PanelBg = [System.Drawing.Color]::FromArgb(240, 240, 240)
+  TextPrimary = [System.Drawing.Color]::FromArgb(0, 0, 0)
+  TextSecondary = [System.Drawing.Color]::FromArgb(102, 102, 102)
+  Accent = [System.Drawing.Color]::FromArgb(0, 120, 212)
+  Border = [System.Drawing.Color]::FromArgb(204, 204, 204)
+  SelectedBg = [System.Drawing.Color]::FromArgb(229, 243, 255)
+  ButtonBg = [System.Drawing.Color]::FromArgb(245, 245, 245)
+  ButtonHoverBg = [System.Drawing.Color]::FromArgb(230, 230, 230)
+  ListViewBg = [System.Drawing.Color]::FromArgb(255, 255, 255)
+  StatusRunning = [System.Drawing.Color]::FromArgb(16, 124, 16)
+  StatusStopped = [System.Drawing.Color]::FromArgb(136, 136, 136)
+  SearchBoxBg = [System.Drawing.Color]::FromArgb(255, 255, 255)
+  SearchBoxBorder = [System.Drawing.Color]::FromArgb(180, 180, 180)
+}
+
+$DarkTheme = @{
+  FormBg = [System.Drawing.Color]::FromArgb(30, 30, 30)
+  PanelBg = [System.Drawing.Color]::FromArgb(37, 37, 37)
+  TextPrimary = [System.Drawing.Color]::FromArgb(204, 204, 204)
+  TextSecondary = [System.Drawing.Color]::FromArgb(157, 157, 157)
+  Accent = [System.Drawing.Color]::FromArgb(0, 120, 212)
+  Border = [System.Drawing.Color]::FromArgb(60, 60, 60)
+  SelectedBg = [System.Drawing.Color]::FromArgb(9, 71, 113)
+  ButtonBg = [System.Drawing.Color]::FromArgb(50, 50, 50)
+  ButtonHoverBg = [System.Drawing.Color]::FromArgb(65, 65, 65)
+  ListViewBg = [System.Drawing.Color]::FromArgb(30, 30, 30)
+  StatusRunning = [System.Drawing.Color]::FromArgb(108, 203, 95)
+  StatusStopped = [System.Drawing.Color]::FromArgb(128, 128, 128)
+  SearchBoxBg = [System.Drawing.Color]::FromArgb(50, 50, 50)
+  SearchBoxBorder = [System.Drawing.Color]::FromArgb(80, 80, 80)
+}
+
+function Apply-Theme {
+  param(
+    [System.Windows.Forms.Form]$Form,
+    [hashtable]$Theme
+  )
+  $Form.BackColor = $Theme.FormBg
+
+  foreach ($control in $Form.Controls) {
+    if ($control -is [System.Windows.Forms.Label]) {
+      if ($control.Name -eq 'titleLabel') {
+        $control.ForeColor = $Theme.TextPrimary
+      } else {
+        $control.ForeColor = $Theme.TextSecondary
+      }
+    }
+    elseif ($control -is [System.Windows.Forms.TextBox]) {
+      $control.BackColor = $Theme.SearchBoxBg
+      $control.ForeColor = $Theme.TextPrimary
+    }
+    elseif ($control -is [System.Windows.Forms.Button]) {
+      $control.BackColor = $Theme.ButtonBg
+      $control.ForeColor = $Theme.TextPrimary
+      $control.FlatAppearance.BorderColor = $Theme.Border
+    }
+    elseif ($control -is [System.Windows.Forms.CheckBox]) {
+      $control.ForeColor = $Theme.TextPrimary
+    }
+    elseif ($control -is [System.Windows.Forms.ListView]) {
+      $control.BackColor = $Theme.ListViewBg
+      $control.ForeColor = $Theme.TextPrimary
+      $control.BackColor = $Theme.ListViewBg
+    }
+  }
+}
+
+function Show-ProfileToast {
+  param(
+    [string]$Title,
+    [string]$Message,
+    [string]$ProfileName
+  )
+  Ensure-WinFormsAssemblies
+  
+  $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
+  $notifyIcon.Visible = $false
+  $notifyIcon.Icon = [System.Drawing.SystemIcons]::Application
+  $notifyIcon.BalloonTipTitle = $Title
+  $notifyIcon.BalloonTipText = "$Message - $ProfileName"
+  $notifyIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
+  $notifyIcon.ShowBalloonTip(3000)
+  
+  Start-Sleep -Milliseconds 3200
+  $notifyIcon.Dispose()
+}
+
+function Show-ErrorToast {
+  param(
+    [string]$Title,
+    [string]$Message
+  )
+  Ensure-WinFormsAssemblies
+  
+  $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
+  $notifyIcon.Visible = $false
+  $notifyIcon.Icon = [System.Drawing.SystemIcons]::Error
+  $notifyIcon.BalloonTipTitle = $Title
+  $notifyIcon.BalloonTipText = $Message
+  $notifyIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Error
+  $notifyIcon.ShowBalloonTip(5000)
+  
+  Start-Sleep -Milliseconds 5200
+  $notifyIcon.Dispose()
+}
+
 function Start-Ui {
   Ensure-WinFormsAssemblies
 
+  $isDarkMode = Get-SystemDarkMode
+  $currentTheme = if ($isDarkMode) { 'dark' } else { 'light' }
+
   $form = New-Object System.Windows.Forms.Form
   $form.Text = 'Multigravity'
-  $form.Width = 540
-  $form.Height = 420
+  $form.Width = 620
+  $form.Height = 480
   $form.StartPosition = 'CenterScreen'
   $form.FormBorderStyle = 'FixedDialog'
   $form.MaximizeBox = $false
   $form.MinimizeBox = $true
+  $form.KeyPreview = $true
 
   $titleLabel = New-Object System.Windows.Forms.Label
+  $titleLabel.Name = 'titleLabel'
   $titleLabel.Text = 'Antigravity profiles'
   $titleLabel.AutoSize = $true
   $titleLabel.Font = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold)
   $titleLabel.Location = New-Object System.Drawing.Point(16, 14)
   $form.Controls.Add($titleLabel)
 
+  $themeToggle = New-Object System.Windows.Forms.CheckBox
+  $themeToggle.Name = 'themeToggle'
+  $themeToggle.Text = if ($isDarkMode) { 'Dark' } else { 'Light' }
+  $themeToggle.AutoSize = $true
+  $themeToggle.Location = New-Object System.Drawing.Point(520, 14)
+  $themeToggle.Checked = $isDarkMode
+  $themeToggle.Add_CheckedChanged({
+    if ($themeToggle.Checked) {
+      $script:currentTheme = 'dark'
+      Apply-Theme -Form $form -Theme $DarkTheme
+      $themeToggle.Text = 'Dark'
+    } else {
+      $script:currentTheme = 'light'
+      Apply-Theme -Form $form -Theme $LightTheme
+      $themeToggle.Text = 'Light'
+    }
+  })
+  $form.Controls.Add($themeToggle)
+
   $pathLabel = New-Object System.Windows.Forms.Label
+  $pathLabel.Name = 'pathLabel'
   $pathLabel.AutoSize = $false
   $pathLabel.Width = 360
   $pathLabel.Height = 34
@@ -795,59 +938,100 @@ function Start-Ui {
 
   $setPathButton = New-Object System.Windows.Forms.Button
   $setPathButton.Text = 'Locate App'
-  $setPathButton.Width = 130
+  $setPathButton.Width = 100
   $setPathButton.Height = 28
   $setPathButton.Location = New-Object System.Drawing.Point(390, 44)
+  $setPathButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+  $setPathButton.FlatAppearance.BorderSize = 1
   $form.Controls.Add($setPathButton)
 
+  $searchBox = New-Object System.Windows.Forms.TextBox
+  $searchBox.Name = 'searchBox'
+  $searchBox.PlaceholderText = 'Search profiles...'
+  $searchBox.Width = 588
+  $searchBox.Height = 24
+  $searchBox.Location = New-Object System.Drawing.Point(16, 76)
+  $searchBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+  $searchBox.Add_TextChanged({
+    $filter = $searchBox.Text.Trim()
+    foreach ($item in $profilesView.Items) {
+      if ($filter -eq '' -or $item.Text -like "*$filter*") {
+        $item.BackColor = [System.Drawing.Color]::Transparent
+      }
+    }
+  })
+  $form.Controls.Add($searchBox)
+
   $profilesView = New-Object System.Windows.Forms.ListView
+  $profilesView.Name = 'profilesView'
   $profilesView.View = [System.Windows.Forms.View]::Details
   $profilesView.FullRowSelect = $true
   $profilesView.MultiSelect = $false
   $profilesView.HideSelection = $false
-  $profilesView.Width = 504
-  $profilesView.Height = 220
-  $profilesView.Location = New-Object System.Drawing.Point(16, 86)
-  [void]$profilesView.Columns.Add('Profile', 170)
-  [void]$profilesView.Columns.Add('Status', 90)
+  $profilesView.Width = 588
+  $profilesView.Height = 230
+  $profilesView.Location = New-Object System.Drawing.Point(16, 106)
+  $profilesView.SmallImageList = New-Object System.Windows.Forms.ImageList
+  $profilesView.SmallImageList.Images.Add('running', (New-Object System.Drawing.Bitmap(16, 16)))
+  $profilesView.SmallImageList.Images.Add('stopped', (New-Object System.Drawing.Bitmap(16, 16)))
+  [void]$profilesView.Columns.Add('Profile', 180)
+  [void]$profilesView.Columns.Add('Status', 80)
   [void]$profilesView.Columns.Add('Theme', 120)
-  [void]$profilesView.Columns.Add('Creds', 70)
+  [void]$profilesView.Columns.Add('Creds', 60)
   $form.Controls.Add($profilesView)
+
+  $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+  $contextMenu.Items.Add('Open', $null, { & $openSelectedProfile })
+  $contextMenu.Items.Add('Switch To', $null, { & $switchSelectedProfile })
+  $contextMenu.Items.Add('-')
+  $contextMenu.Items.Add('Delete', $null, { & $deleteSelectedProfile })
+  $profilesView.ContextMenuStrip = $contextMenu
 
   $launchButton = New-Object System.Windows.Forms.Button
   $launchButton.Text = 'Open'
   $launchButton.Width = 85
-  $launchButton.Location = New-Object System.Drawing.Point(16, 320)
+  $launchButton.Location = New-Object System.Drawing.Point(16, 350)
+  $launchButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+  $launchButton.FlatAppearance.BorderSize = 1
   $form.Controls.Add($launchButton)
 
   $switchButton = New-Object System.Windows.Forms.Button
   $switchButton.Text = 'Switch'
   $switchButton.Width = 85
-  $switchButton.Location = New-Object System.Drawing.Point(111, 320)
+  $switchButton.Location = New-Object System.Drawing.Point(111, 350)
+  $switchButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+  $switchButton.FlatAppearance.BorderSize = 1
   $form.Controls.Add($switchButton)
 
   $newButton = New-Object System.Windows.Forms.Button
   $newButton.Text = 'New'
   $newButton.Width = 85
-  $newButton.Location = New-Object System.Drawing.Point(206, 320)
+  $newButton.Location = New-Object System.Drawing.Point(206, 350)
+  $newButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+  $newButton.FlatAppearance.BorderSize = 1
   $form.Controls.Add($newButton)
 
   $deleteButton = New-Object System.Windows.Forms.Button
   $deleteButton.Text = 'Delete'
   $deleteButton.Width = 85
-  $deleteButton.Location = New-Object System.Drawing.Point(301, 320)
+  $deleteButton.Location = New-Object System.Drawing.Point(301, 350)
+  $deleteButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+  $deleteButton.FlatAppearance.BorderSize = 1
   $form.Controls.Add($deleteButton)
 
   $credentialButton = New-Object System.Windows.Forms.Button
   $credentialButton.Text = 'Save Login'
   $credentialButton.Width = 95
-  $credentialButton.Location = New-Object System.Drawing.Point(396, 320)
+  $credentialButton.Location = New-Object System.Drawing.Point(396, 350)
+  $credentialButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+  $credentialButton.FlatAppearance.BorderSize = 1
   $form.Controls.Add($credentialButton)
 
   $footerLabel = New-Object System.Windows.Forms.Label
-  $footerLabel.Text = 'Double-click a profile to open it.'
+  $footerLabel.Name = 'footerLabel'
+  $footerLabel.Text = 'Double-click or press Enter to open. Ctrl+N for new profile.'
   $footerLabel.AutoSize = $true
-  $footerLabel.Location = New-Object System.Drawing.Point(16, 358)
+  $footerLabel.Location = New-Object System.Drawing.Point(16, 388)
   $form.Controls.Add($footerLabel)
 
   $showStatus = {
@@ -883,8 +1067,13 @@ function Start-Ui {
 
   $refreshProfiles = {
     $profilesView.Items.Clear()
+    $filter = $searchBox.Text.Trim()
     foreach ($summary in @(Get-ProfileSummaries)) {
+      if ($filter -ne '' -and $summary.Name -notlike "*$filter*") {
+        continue
+      }
       $item = New-Object System.Windows.Forms.ListViewItem($summary.Name)
+      $item.ImageKey = if ($summary.Status -eq 'Running') { 'running' } else { 'stopped' }
       $credText = if ($summary.HasCredentials) { 'Yes' } else { 'No' }
       [void]$item.SubItems.Add($summary.Status)
       [void]$item.SubItems.Add($summary.Theme)
@@ -901,6 +1090,29 @@ function Start-Ui {
     & $updateActionButtons
   }
 
+  $deleteSelectedProfile = {
+    $selected = & $getSelectedProfileName
+    if (-not $selected) { return }
+    $result = [System.Windows.Forms.MessageBox]::Show(
+      "Delete profile '$selected' and its data?",
+      'Multigravity',
+      [System.Windows.Forms.MessageBoxButtons]::YesNo,
+      [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+    if ($result -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+
+    try {
+      Remove-Profile -Name $selected -Force
+      & $refreshProfiles
+      & $showStatus "Deleted $selected"
+      Show-ProfileToast -Title 'Profile Deleted' -Message 'Deleted profile' -ProfileName $selected
+    } catch {
+      [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Multigravity') | Out-Null
+      & $showStatus $_.Exception.Message
+      Show-ErrorToast -Title 'Error' -Message $_.Exception.Message
+    }
+  }
+
   $createNewProfile = {
     $name = Prompt-NewProfileName
     if ([string]::IsNullOrWhiteSpace($name)) { return }
@@ -908,9 +1120,11 @@ function Start-Ui {
       New-Profile -Name $name.Trim() -Theme $null -FontSize 0 -Keybindings $null -Extensions @()
       & $refreshProfiles
       & $showStatus "Created $name"
+      Show-ProfileToast -Title 'Profile Created' -Message 'New profile created' -ProfileName $name
     } catch {
       [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Multigravity') | Out-Null
       & $showStatus $_.Exception.Message
+      Show-ErrorToast -Title 'Error' -Message $_.Exception.Message
     }
   }
 
@@ -918,12 +1132,15 @@ function Start-Ui {
     $selected = & $getSelectedProfileName
     if (-not $selected) { return }
     try {
+      & $showStatus "Launching $selected..."
       Start-Antigravity -Name $selected -Switch
       & $refreshProfiles
       & $showStatus "Opened $selected"
+      Show-ProfileToast -Title 'Profile Opened' -Message 'Launching profile' -ProfileName $selected
     } catch {
       [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Multigravity') | Out-Null
       & $showStatus $_.Exception.Message
+      Show-ErrorToast -Title 'Launch Failed' -Message $_.Exception.Message
     }
   }
 
@@ -934,9 +1151,11 @@ function Start-Ui {
       Switch-ToProfile -Name $selected | Out-Null
       & $refreshProfiles
       & $showStatus "Switched to $selected"
+      Show-ProfileToast -Title 'Profile Switched' -Message 'Switched to profile' -ProfileName $selected
     } catch {
       [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Multigravity') | Out-Null
       & $showStatus $_.Exception.Message
+      Show-ErrorToast -Title 'Switch Failed' -Message $_.Exception.Message
     }
   }
 
@@ -969,27 +1188,7 @@ function Start-Ui {
   })
 
   $newButton.Add_Click($createNewProfile)
-
-  $deleteButton.Add_Click({
-    $selected = & $getSelectedProfileName
-    if (-not $selected) { return }
-    $result = [System.Windows.Forms.MessageBox]::Show(
-      "Delete profile '$selected' and its data?",
-      'Multigravity',
-      [System.Windows.Forms.MessageBoxButtons]::YesNo,
-      [System.Windows.Forms.MessageBoxIcon]::Warning
-    )
-    if ($result -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-
-    try {
-      Remove-Profile -Name $selected -Force
-      & $refreshProfiles
-      & $showStatus "Deleted $selected"
-    } catch {
-      [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Multigravity') | Out-Null
-      & $showStatus $_.Exception.Message
-    }
-  })
+  $deleteButton.Add_Click($deleteSelectedProfile)
 
   $credentialButton.Add_Click({
     $selected = & $getSelectedProfileName
@@ -1007,14 +1206,61 @@ function Start-Ui {
       Set-ProfileCredential -Name $selected
       & $refreshProfiles
       & $showStatus "Updated credentials for $selected"
+      Show-ProfileToast -Title 'Credentials Saved' -Message 'Encrypted credentials stored' -ProfileName $selected
     } catch {
       [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Multigravity') | Out-Null
       & $showStatus $_.Exception.Message
+      Show-ErrorToast -Title 'Error' -Message $_.Exception.Message
     }
   })
 
   $profilesView.Add_SelectedIndexChanged($updateActionButtons)
-  $form.Add_Shown({ & $refreshProfiles })
+
+  $form.Add_KeyDown({
+    param($sender, $e)
+    if ($e.KeyCode -eq 'Enter') {
+      & $openSelectedProfile
+      $e.SuppressKeyPress = $true
+    }
+    elseif ($e.KeyCode -eq 'Delete' -and $profilesView.SelectedItems.Count -gt 0) {
+      & $deleteSelectedProfile
+      $e.SuppressKeyPress = $true
+    }
+    elseif ($e.KeyCode -eq 'N' -and $e.Control) {
+      & $createNewProfile
+      $e.SuppressKeyPress = $true
+    }
+    elseif ($e.KeyCode -eq 'Escape') {
+      $form.Close()
+    }
+    elseif ($e.KeyCode -eq 'F' -and $e.Control) {
+      $searchBox.Focus()
+      $e.SuppressKeyPress = $true
+    }
+  })
+
+  $searchBox.Add_KeyDown({
+    param($sender, $e)
+    if ($e.KeyCode -eq 'Escape') {
+      $searchBox.Text = ''
+      $profilesView.Focus()
+      $e.SuppressKeyPress = $true
+    }
+    elseif ($e.KeyCode -eq 'Down' -and $profilesView.Items.Count -gt 0) {
+      $profilesView.Items[0].Selected = $true
+      $profilesView.Focus()
+      $e.SuppressKeyPress = $true
+    }
+  })
+
+  $form.Add_Shown({
+    if ($isDarkMode) {
+      Apply-Theme -Form $form -Theme $DarkTheme
+    } else {
+      Apply-Theme -Form $form -Theme $LightTheme
+    }
+    & $refreshProfiles
+  })
   [void]$form.ShowDialog()
 }
 
