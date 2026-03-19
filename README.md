@@ -1,93 +1,52 @@
-[![GitHub repository](https://img.shields.io/badge/GitHub-Repository-blue?logo=github)](https://github.com/sujitagarwal/multigravity-cli)
-[![GitHub profile](https://img.shields.io/badge/GitHub-Profile-lightgrey?logo=github)](https://github.com/sujitagarwal)
-[![GitHub stars](https://img.shields.io/github/stars/sujitagarwal/multigravity-cli?style=social)](https://github.com/sujitagarwal/multigravity-cli/stargazers)
+# Multigravity for Windows
 
-![Multigravity](assets/multigravity-logo.jpg)
-# Multigravity
+Multigravity lets you run Antigravity with separate profiles on Windows 10 and Windows 11.
 
+Each profile keeps its own app data, settings, extensions, and optional saved credentials, so you can stay signed into different accounts and switch quickly.
 
-**Run multiple Antigravity IDE profiles at the same time — each with its own accounts, settings, and extensions.**
-
-> Note: Multigravity currently only supports macOS.
-
-No more logging in and out. Just switch profiles instantly or use them all at once!
-
----
-
-## Install
-
-Open the **Terminal** app on your Mac and paste this:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/sujitagarwal/multigravity-cli/main/install.sh)"
+## Quick Start
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
+multigravity config set-app "C:\Users\<you>\AppData\Local\Programs\Antigravity"
+multigravity
 ```
 
-That's it. Multigravity is now installed.
+`multigravity` opens a small profile window. You do not need to learn commands to use the basics.
 
----
+## What You Do
+1. Click `Locate App` if the app path is not set yet.
+2. Click `New` and enter a profile name like `work` or `personal`.
+3. Double-click a profile to open it.
+4. Click `Switch` to jump back to a profile that is already running.
+5. Click `Delete` if you want to remove a profile and its data.
+6. Click `Save Login` only if you want encrypted credentials stored for that profile.
 
-## Getting Started
+## How It Works
+- Each profile lives in `%LOCALAPPDATA%\Multigravity\profiles\<name>`.
+- Multigravity starts Antigravity with a separate user-data folder and extensions folder for that profile.
+- If the profile is already running, Multigravity brings that window to the front instead of opening a duplicate.
+- Logs and launcher settings live in `%LOCALAPPDATA%\Multigravity`.
 
-### 1. Create a profile
-
-Give it any name you like — your name, a project, a client, anything:
-
-```bash
-multigravity new work
-multigravity new personal
+## Advanced Commands
+```powershell
+multigravity ui
+multigravity profile list
+multigravity launch work
+multigravity switch work
+multigravity credential set work
+multigravity tray
+multigravity doctor
 ```
 
-This also creates a clickable app shortcut in your `~/Applications` folder.
+Profile names accept letters, numbers, and hyphens only.
 
-### 2. Open a profile
+## More Help
+- User guide: `docs/how-it-works.md`
+- Acceptance criteria: `docs/acceptance-criteria.md`
+- Test plan: `docs/testing-plan.md`
+- Contributor guide: `AGENTS.md`
 
-```bash
-multigravity work
-```
-
-Antigravity will open using that profile's isolated settings and accounts.
-
-### 3. See all your profiles
-
-```bash
-multigravity list
-```
-
----
-
-## Other Commands
-
-### Rename a profile
-
-```bash
-multigravity rename work freelance
-```
-
-### Delete a profile
-
-```bash
-multigravity delete personal
-```
-
-You'll be asked to confirm before anything is deleted.
-
-### Get help
-
-```bash
-multigravity help
-```
-
----
-
-## Profile Name Rules
-
-- Letters, numbers, and hyphens only
-- Must start with a letter or number
-- ✅ `work`, `client-a`, `test1`
-- ❌ `-name`, `my_profile`
-
----
-
-## App Shortcuts
-
-Every profile automatically gets a **clickable app** in `~/Applications` with the Multigravity icon — so you can open profiles directly from Finder or pin them to the Dock, just like any other app.
+## Notes
+- Credentials are optional and stored with Windows DPAPI, not plain text.
+- Chocolatey packaging sources live under `packaging/chocolatey/`.
+- The UI is intentionally minimal. The CLI remains available for advanced use.

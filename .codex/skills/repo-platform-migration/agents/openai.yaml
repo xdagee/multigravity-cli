@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Platform Migration"
+  short_description: "Migrate and verify a repo on a new platform"
+  default_prompt: "Use $repo-platform-migration to adapt this repository to a new target platform and verify the result."

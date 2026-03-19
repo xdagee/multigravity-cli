@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>multigravity</id>
+    <version>1.0.0</version>
+    <title>Multigravity</title>
+    <authors>sujitagarwal</authors>
+    <owners>sujitagarwal</owners>
+    <summary>Run isolated Antigravity IDE profiles concurrently on Windows.</summary>
+    <description>Multigravity provisions per-profile Windows data directories, stores credentials with DPAPI, and launches isolated Antigravity IDE instances.</description>
+    <projectUrl>https://github.com/sujitagarwal/multigravity-cli</projectUrl>
+    <tags>antigravity ide profiles windows powershell</tags>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+  </metadata>
+</package>

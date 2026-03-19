@@ -1,0 +1,4 @@
+interface:
+  display_name: "Windows Launcher Debug"
+  short_description: "Debug and verify Windows PowerShell launchers"
+  default_prompt: "Use $windows-powershell-launcher-debug to debug and verify this Windows PowerShell CLI launcher."

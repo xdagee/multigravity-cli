@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "skill": {
+      "*": "allow"
+    }
+  },
+  "agent": {
+    "powershell-reviewer": {
+      "description": "Reviews PowerShell code for style, conventions, and best practices",
+      "mode": "subagent",
+      "hidden": false
+    },
+    "test-runner": {
+      "description": "Runs and analyzes Pester 5.x tests for the Multigravity project",
+      "mode": "subagent",
+      "hidden": false
+    }
+  },
+  "instructions": [
+    "AGENTS.md",
+    ".opencode/skills/powershell-style/SKILL.md",
+    ".opencode/skills/profile-management/SKILL.md",
+    ".opencode/skills/pester-testing/SKILL.md"
+  ]
+}
