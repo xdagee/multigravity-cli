@@ -39,6 +39,9 @@ function Initialize-Storage {
       defaultArguments = @()
       launchTimeoutSeconds = 15
       passCredentialEnv = $false
+      minimizeAfterSwitch = $false
+      restoreLastProfile = $false
+      activeProfile = $null
     }
     Save-JsonFile -Path $SettingsPath -Value $settings
   }
@@ -88,7 +91,28 @@ function Save-JsonFile {
 
 function Get-Settings {
   Initialize-Storage
-  return Read-JsonFile -Path $SettingsPath
+  $settings = Read-JsonFile -Path $SettingsPath
+  
+  $propNames = $settings.PSObject.Properties.Name
+  $modified = $false
+  if ('minimizeAfterSwitch' -notin $propNames) {
+    $settings | Add-Member -NotePropertyName 'minimizeAfterSwitch' -NotePropertyValue $false -Force
+    $modified = $true
+  }
+  if ('restoreLastProfile' -notin $propNames) {
+    $settings | Add-Member -NotePropertyName 'restoreLastProfile' -NotePropertyValue $false -Force
+    $modified = $true
+  }
+  if ('activeProfile' -notin $propNames) {
+    $settings | Add-Member -NotePropertyName 'activeProfile' -NotePropertyValue $null -Force
+    $modified = $true
+  }
+  
+  if ($modified) {
+    Save-Settings -Settings $settings
+  }
+  
+  return $settings
 }
 
 function Save-Settings {
@@ -457,13 +481,13 @@ function Get-AntigravityProcessSnapshots {
 function Save-InstanceRecord {
   param(
     [string]$Profile,
-    [int]$Pid
+    [int]$ProcessId
   )
   $instances = Get-RunningInstances
-  $filtered = @($instances | Where-Object { $_.pid -ne $Pid })
+  $filtered = @($instances | Where-Object { $_.pid -ne $ProcessId })
   $filtered += @{
     profile = $Profile
-    pid = $Pid
+    pid = $ProcessId
     launchedAt = (Get-Date).ToString('o')
   }
   Save-JsonFile -Path $InstancesPath -Value @($filtered)
@@ -547,7 +571,7 @@ function Start-Antigravity {
     Fail "Failed to launch Antigravity for profile '$Name'."
   }
 
-  Save-InstanceRecord -Profile $Name -Pid $process.Id
+  Save-InstanceRecord -Profile $Name -ProcessId $process.Id
   Write-Log -Level 'info' -Message "Launched profile '$Name' with PID $($process.Id)."
   Write-Host "Launched profile '$Name' (PID $($process.Id))."
 }
@@ -578,6 +602,7 @@ function Switch-ToProfile {
         [void][Win32Window]::ShowWindowAsync($process.MainWindowHandle, 9)
         [void][Win32Window]::SetForegroundWindow($process.MainWindowHandle)
         Write-Host "Activated profile '$Name' (PID $($process.Id))."
+        Set-ActiveProfile -Name $Name
         return $true
       }
     } catch {
@@ -587,10 +612,19 @@ function Switch-ToProfile {
 
   if ($SilentlyLaunch) {
     Start-Antigravity -Name $Name
+    Set-ActiveProfile -Name $Name
     return $true
   }
 
   return $false
+}
+
+function Set-ActiveProfile {
+  param([string]$Name)
+  $settings = Get-Settings
+  $settings.activeProfile = $Name
+  Save-Settings -Settings $settings
+  Write-Host "Active profile set to: $Name"
 }
 
 function Set-AntigravityPath {
@@ -841,7 +875,6 @@ function Apply-Theme {
     elseif ($control -is [System.Windows.Forms.ListView]) {
       $control.BackColor = $Theme.ListViewBg
       $control.ForeColor = $Theme.TextPrimary
-      $control.BackColor = $Theme.ListViewBg
     }
   }
 }
@@ -1062,18 +1095,38 @@ function Start-Ui {
     $switchButton.Enabled = $state.SwitchEnabled
     $deleteButton.Enabled = $state.DeleteEnabled
     $credentialButton.Enabled = $state.SaveLoginEnabled
+    
+    if ($profilesView.SelectedItems.Count -gt 0) {
+      $selectedName = $profilesView.SelectedItems[0].Text
+      $selectedSummary = @(Get-ProfileSummaries) | Where-Object { $_.Name -eq $selectedName }
+      if ($selectedSummary -and $selectedSummary.Status -eq 'Running') {
+        $switchButton.Text = 'Activate'
+      } else {
+        $switchButton.Text = 'Launch'
+      }
+    }
+    
     & $showStatus $state.StatusMessage
   }
 
   $refreshProfiles = {
     $profilesView.Items.Clear()
     $filter = $searchBox.Text.Trim()
+    $activeProfile = (Get-Settings).activeProfile
     foreach ($summary in @(Get-ProfileSummaries)) {
       if ($filter -ne '' -and $summary.Name -notlike "*$filter*") {
         continue
       }
       $item = New-Object System.Windows.Forms.ListViewItem($summary.Name)
       $item.ImageKey = if ($summary.Status -eq 'Running') { 'running' } else { 'stopped' }
+      
+      if ($summary.Name -eq $activeProfile) {
+        $item.BackColor = [System.Drawing.Color]::FromArgb(9, 71, 113)
+        $item.ForeColor = [System.Drawing.Color]::FromArgb(204, 204, 204)
+        $font = New-Object System.Drawing.Font($profilesView.Font, [System.Drawing.FontStyle]::Bold)
+        $item.Font = $font
+      }
+      
       $credText = if ($summary.HasCredentials) { 'Yes' } else { 'No' }
       [void]$item.SubItems.Add($summary.Status)
       [void]$item.SubItems.Add($summary.Theme)
@@ -1147,11 +1200,35 @@ function Start-Ui {
   $switchSelectedProfile = {
     $selected = & $getSelectedProfileName
     if (-not $selected) { return }
+    
+    $selectedSummary = @(Get-ProfileSummaries) | Where-Object { $_.Name -eq $selected }
+    $isRunning = $selectedSummary -and $selectedSummary.Status -eq 'Running'
+    
     try {
-      Switch-ToProfile -Name $selected | Out-Null
+      if ($isRunning) {
+        & $showStatus "Activating $selected..."
+        Switch-ToProfile -Name $selected | Out-Null
+      } else {
+        & $showStatus "Launching $selected..."
+        Start-Antigravity -Name $selected -Switch
+      }
+      
       & $refreshProfiles
+      
+      $activeItem = $profilesView.Items | Where-Object { $_.Text -eq $selected }
+      if ($activeItem) {
+        $originalColor = $activeItem.BackColor
+        $activeItem.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
+        Start-Sleep -Milliseconds 150
+        $activeItem.BackColor = $originalColor
+      }
+      
       & $showStatus "Switched to $selected"
       Show-ProfileToast -Title 'Profile Switched' -Message 'Switched to profile' -ProfileName $selected
+      
+      if ((Get-Settings).minimizeAfterSwitch) {
+        $form.WindowState = 'Minimized'
+      }
     } catch {
       [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Multigravity') | Out-Null
       & $showStatus $_.Exception.Message
@@ -1218,8 +1295,13 @@ function Start-Ui {
 
   $form.Add_KeyDown({
     param($sender, $e)
+    $script:lastActivityTime = Get-Date
     if ($e.KeyCode -eq 'Enter') {
       & $openSelectedProfile
+      $e.SuppressKeyPress = $true
+    }
+    elseif ($e.KeyCode -eq 'S' -and $profilesView.SelectedItems.Count -gt 0) {
+      & $switchSelectedProfile
       $e.SuppressKeyPress = $true
     }
     elseif ($e.KeyCode -eq 'Delete' -and $profilesView.SelectedItems.Count -gt 0) {
@@ -1253,6 +1335,35 @@ function Start-Ui {
     }
   })
 
+  $script:lastActivityTime = Get-Date
+  
+  $refreshTimer = New-Object System.Windows.Forms.Timer
+  $refreshTimer.Interval = 3000
+  $refreshTimer.Add_Tick({
+    $idleSeconds = ((Get-Date) - $script:lastActivityTime).TotalSeconds
+    
+    if ($idleSeconds -gt 60) {
+      $refreshTimer.Interval = 10000
+    } elseif ($idleSeconds -gt 30) {
+      $refreshTimer.Interval = 5000
+    } else {
+      $refreshTimer.Interval = 3000
+    }
+    
+    if ($form.WindowState -ne 'Minimized' -and $form.Visible) {
+      & $refreshProfiles
+    }
+  })
+
+  $form.Add_Activated({
+    $script:lastActivityTime = Get-Date
+    & $refreshProfiles
+  })
+
+  $form.Add_FormClosing({
+    $refreshTimer.Stop()
+  })
+
   $form.Add_Shown({
     if ($isDarkMode) {
       Apply-Theme -Form $form -Theme $DarkTheme
@@ -1260,6 +1371,17 @@ function Start-Ui {
       Apply-Theme -Form $form -Theme $LightTheme
     }
     & $refreshProfiles
+    $refreshTimer.Start()
+    
+    $lastActive = (Get-Settings).activeProfile
+    if ((Get-Settings).restoreLastProfile -and $lastActive) {
+      $lastItem = $profilesView.Items | Where-Object { $_.Text -eq $lastActive }
+      if ($lastItem) {
+        $lastItem.Selected = $true
+        Start-Sleep -Milliseconds 300
+        & $switchSelectedProfile
+      }
+    }
   })
   [void]$form.ShowDialog()
 }
@@ -1273,6 +1395,8 @@ Commands:
   config set-app <path>                  Set Antigravity.exe path
   config set-args [args...]              Set default launch arguments
   config credential-env on|off           Pass stored credentials as env vars
+  config minimize-after-switch on|off     Minimize window after switching profiles
+  config restore-last-profile on|off     Auto-restore last active profile on launch
   profile new <name> [options]           Create a profile
   profile set <name> [options]           Update profile settings metadata
   profile list                           List profiles
@@ -1343,6 +1467,34 @@ try {
         'credential-env' {
           if ($Args[2] -eq 'on') { Set-CredentialEnvMode -Enabled $true }
           elseif ($Args[2] -eq 'off') { Set-CredentialEnvMode -Enabled $false }
+          else { Fail "Use 'on' or 'off'." }
+        }
+        'minimize-after-switch' {
+          $settings = Get-Settings
+          if ($Args[2] -eq 'on') {
+            $settings.minimizeAfterSwitch = $true
+            Save-Settings -Settings $settings
+            Write-Host 'Minimize after switch enabled.'
+          }
+          elseif ($Args[2] -eq 'off') {
+            $settings.minimizeAfterSwitch = $false
+            Save-Settings -Settings $settings
+            Write-Host 'Minimize after switch disabled.'
+          }
+          else { Fail "Use 'on' or 'off'." }
+        }
+        'restore-last-profile' {
+          $settings = Get-Settings
+          if ($Args[2] -eq 'on') {
+            $settings.restoreLastProfile = $true
+            Save-Settings -Settings $settings
+            Write-Host 'Restore last profile enabled.'
+          }
+          elseif ($Args[2] -eq 'off') {
+            $settings.restoreLastProfile = $false
+            Save-Settings -Settings $settings
+            Write-Host 'Restore last profile disabled.'
+          }
           else { Fail "Use 'on' or 'off'." }
         }
         default { Fail 'Unknown config command.' }
