@@ -31,14 +31,34 @@ multigravity
 ```powershell
 multigravity ui
 multigravity profile list
-multigravity launch work
+multigravity launch work --account user@example.com
 multigravity switch work
-multigravity credential set work
+multigravity credential set work --account user@example.com
+multigravity credential list work
+multigravity credential set-default work --account user@example.com
 multigravity tray
 multigravity doctor
 ```
 
 Profile names accept letters, numbers, and hyphens only.
+
+## Multiple Accounts
+
+Each profile can store multiple credentials:
+```powershell
+# Store credentials for different accounts
+multigravity credential set work --account work@example.com
+multigravity credential set work --account personal@example.com
+
+# Set default account for profile
+multigravity credential set-default work --account work@example.com
+
+# List all stored accounts
+multigravity credential list work
+
+# Launch with specific account
+multigravity launch work --account work@example.com
+```
 
 ## More Help
 - User guide: `docs/how-it-works.md`
