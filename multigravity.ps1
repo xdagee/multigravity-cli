@@ -163,7 +163,17 @@ function Get-ProfileMetadata {
   if (-not (Test-Path $path)) {
     Fail "Profile '$Name' does not exist."
   }
-  return Read-JsonFile -Path $path
+  $profile = Read-JsonFile -Path $path
+  $propNames = $profile.PSObject.Properties.Name
+  $modified = $false
+  if ('defaultCredential' -notin $propNames) {
+    $profile | Add-Member -NotePropertyName 'defaultCredential' -NotePropertyValue $null -Force
+    $modified = $true
+  }
+  if ($modified) {
+    Save-ProfileMetadata -Name $Name -Profile $profile
+  }
+  return $profile
 }
 
 function Save-ProfileMetadata {
@@ -186,6 +196,7 @@ function Ensure-ProfileStructure {
   Ensure-Directory (Join-Path $profileRoot 'UserData\User')
   Ensure-Directory (Join-Path $profileRoot 'Extensions')
   Ensure-Directory (Join-Path $profileRoot 'Logs')
+  Ensure-Directory (Join-Path $profileRoot 'Profile')
 }
 
 function New-Profile {
@@ -225,13 +236,18 @@ function Write-UserFiles {
   $profile = Get-ProfileMetadata -Name $Name
   $userDir = Join-Path (Get-ProfilePath -Name $Name) 'UserData\User'
 
-  $settings = @{}
-  if ($profile.settings.theme) { $settings['workbench.colorTheme'] = $profile.settings.theme }
-  if ($profile.settings.fontSize) { $settings['editor.fontSize'] = [int]$profile.settings.fontSize }
+  $settingsPath = Join-Path $userDir 'settings.json'
+  $keybindingsPath = Join-Path $userDir 'keybindings.json'
 
-  $settings | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $userDir 'settings.json') -Encoding UTF8
+  if ($profile.settings.theme -or $profile.settings.fontSize) {
+    $settings = @{}
+    if ($profile.settings.theme) { $settings['workbench.colorTheme'] = $profile.settings.theme }
+    if ($profile.settings.fontSize) { $settings['editor.fontSize'] = [int]$profile.settings.fontSize }
+    $settings | ConvertTo-Json -Depth 5 | Set-Content -Path $settingsPath -Encoding UTF8
+  } elseif (-not (Test-Path $settingsPath)) {
+    @{} | ConvertTo-Json -Depth 5 | Set-Content -Path $settingsPath -Encoding UTF8
+  }
 
-  $keybindings = @()
   if ($profile.settings.keybindings) {
     $keybindings = @(
       @{
@@ -240,8 +256,10 @@ function Write-UserFiles {
         when = "profile:$($profile.settings.keybindings)"
       }
     )
+    $keybindings | ConvertTo-Json -Depth 5 | Set-Content -Path $keybindingsPath -Encoding UTF8
+  } elseif (-not (Test-Path $keybindingsPath)) {
+    @() | ConvertTo-Json -Depth 5 | Set-Content -Path $keybindingsPath -Encoding UTF8
   }
-  $keybindings | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $userDir 'keybindings.json') -Encoding UTF8
 }
 
 function Get-ProfileNames {
@@ -356,35 +374,137 @@ function Set-Profile {
 }
 
 function Get-CredentialPath {
+  param(
+    [string]$Name,
+    [string]$Account
+  )
+  $profilePath = Get-ProfilePath -Name $Name
+  if ($Account) {
+    $credentialsDir = Join-Path $profilePath 'credentials'
+    Join-Path $credentialsDir "$Account.xml"
+  } else {
+    Join-Path $profilePath 'credential.xml'
+  }
+}
+
+function Get-CredentialsDir {
   param([string]$Name)
-  Join-Path (Get-ProfilePath -Name $Name) 'credential.xml'
+  Join-Path (Get-ProfilePath -Name $Name) 'credentials'
 }
 
 function Set-ProfileCredential {
-  param([string]$Name)
+  param(
+    [string]$Name,
+    [string]$Account
+  )
   [void](Get-ProfileMetadata -Name $Name)
-  $credential = Get-Credential -Message "Enter Antigravity credentials for profile '$Name'"
-  $path = Get-CredentialPath -Name $Name
+  $credentialsDir = Get-CredentialsDir -Name $Name
+  Ensure-Directory -Path $credentialsDir
+  $credential = Get-Credential -Message "Enter Antigravity credentials for account '$Account' in profile '$Name'"
+  $path = Get-CredentialPath -Name $Name -Account $Account
   $credential | Export-Clixml -Path $path
-  Write-Host "Stored encrypted credentials for '$Name'."
+  Write-Host "Stored encrypted credentials for account '$Account' in profile '$Name'."
 }
 
 function Clear-ProfileCredential {
-  param([string]$Name)
-  $path = Get-CredentialPath -Name $Name
-  if (Test-Path $path) {
-    Remove-Item -Path $path -Force
+  param(
+    [string]$Name,
+    [string]$Account
+  )
+  if ($Account) {
+    $path = Get-CredentialPath -Name $Name -Account $Account
+    if (Test-Path $path) {
+      Remove-Item -Path $path -Force
+      Write-Host "Removed credentials for account '$Account' in profile '$Name'."
+    } else {
+      Fail "No credentials found for account '$Account' in profile '$Name'."
+    }
+  } else {
+    $credentialsDir = Get-CredentialsDir -Name $Name
+    if (Test-Path $credentialsDir) {
+      $accounts = @(Get-ChildItem -Path $credentialsDir -Filter '*.xml' -ErrorAction SilentlyContinue)
+      if ($accounts.Count -eq 0) {
+        Write-Host "No credentials found for profile '$Name'."
+        return
+      }
+      $answer = Read-Host "Remove all $($accounts.Count) credential(s) for profile '$Name'? [y/N]"
+      if ($answer -notmatch '^[Yy]$') {
+        Write-Host 'Aborted.'
+        return
+      }
+      Remove-Item -Path $credentialsDir -Recurse -Force
+      Write-Host "Removed all credentials for profile '$Name'."
+    } else {
+      Write-Host "No credentials found for profile '$Name'."
+    }
   }
-  Write-Host "Removed stored credentials for '$Name'."
 }
 
 function Get-ProfileCredential {
-  param([string]$Name)
-  $path = Get-CredentialPath -Name $Name
+  param(
+    [string]$Name,
+    [string]$Account
+  )
+  $path = Get-CredentialPath -Name $Name -Account $Account
   if (Test-Path $path) {
     return Import-Clixml -Path $path
   }
   return $null
+}
+
+function List-ProfileCredentials {
+  param([string]$Name)
+  $credentialsDir = Get-CredentialsDir -Name $Name
+  if (-not (Test-Path $credentialsDir)) {
+    return @()
+  }
+  $files = @(Get-ChildItem -Path $credentialsDir -Filter '*.xml' -ErrorAction SilentlyContinue)
+  $accounts = @($files | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) })
+  return $accounts
+}
+
+function Get-DefaultCredential {
+  param([string]$Name)
+  $profile = Get-ProfileMetadata -Name $Name
+  $propNames = $profile.PSObject.Properties.Name
+  if ('defaultCredential' -in $propNames) {
+    return $profile.defaultCredential
+  }
+  return $null
+}
+
+function Set-DefaultCredential {
+  param(
+    [string]$Name,
+    [string]$Account
+  )
+  $profile = Get-ProfileMetadata -Name $Name
+  $credentialsDir = Get-CredentialsDir -Name $Name
+  $credentialPath = Get-CredentialPath -Name $Name -Account $Account
+  if (-not (Test-Path $credentialPath)) {
+    Fail "No credentials found for account '$Account' in profile '$Name'."
+  }
+  $profile.defaultCredential = $Account
+  Save-ProfileMetadata -Name $Name -Profile $profile
+  Write-Host "Set default credential to '$Account' for profile '$Name'."
+}
+
+function Clear-DefaultCredential {
+  param([string]$Name)
+  $profile = Get-ProfileMetadata -Name $Name
+  $currentDefault = $null
+  $propNames = $profile.PSObject.Properties.Name
+  if ('defaultCredential' -in $propNames) {
+    $currentDefault = $profile.defaultCredential
+  }
+  if ($null -eq $currentDefault) {
+    Write-Host "No default credential set for profile '$Name'."
+    return
+  }
+  $previous = $currentDefault
+  $profile.defaultCredential = $null
+  Save-ProfileMetadata -Name $Name -Profile $profile
+  Write-Host "Cleared default credential (was '$previous') for profile '$Name'."
 }
 
 function Get-RunningInstances {
@@ -501,7 +621,10 @@ function Remove-InstanceRecords {
 }
 
 function New-LaunchEnvironment {
-  param([string]$Name)
+  param(
+    [string]$Name,
+    [string]$Account
+  )
   $profileRoot = Get-ProfilePath -Name $Name
   $settings = Get-Settings
 
@@ -518,11 +641,12 @@ function New-LaunchEnvironment {
   $environment['TMP'] = Join-Path $profileRoot 'Temp'
   $environment['MULTIGRAVITY_PROFILE'] = $Name
 
-  if ($settings.passCredentialEnv) {
-    $credential = Get-ProfileCredential -Name $Name
+  if ($settings.passCredentialEnv -and $Account) {
+    $credential = Get-ProfileCredential -Name $Name -Account $Account
     if ($credential) {
       $environment['ANTIGRAVITY_USERNAME'] = $credential.UserName
       $environment['ANTIGRAVITY_PASSWORD'] = $credential.GetNetworkCredential().Password
+      $environment['ANTIGRAVITY_ACCOUNT'] = $Account
     }
   }
 
@@ -533,10 +657,18 @@ function Start-Antigravity {
   param(
     [string]$Name,
     [switch]$Switch,
+    [string]$Account,
     [string[]]$ExtraArguments
   )
   $profile = Get-ProfileMetadata -Name $Name
   Ensure-ProfileStructure -Name $Name
+
+  if (-not $Account) {
+    $propNames = $profile.PSObject.Properties.Name
+    if ('defaultCredential' -in $propNames) {
+      $Account = $profile.defaultCredential
+    }
+  }
 
   if ($Switch -and (Switch-ToProfile -Name $Name -SilentlyLaunch:$false)) {
     return
@@ -561,7 +693,7 @@ function Start-Antigravity {
   $startInfo.UseShellExecute = $false
   $startInfo.WorkingDirectory = Split-Path -Path $exePath -Parent
 
-  $environment = New-LaunchEnvironment -Name $Name
+  $environment = New-LaunchEnvironment -Name $Name -Account $Account
   foreach ($pair in $environment.GetEnumerator()) {
     $startInfo.Environment[$pair.Key] = $pair.Value
   }
@@ -572,8 +704,8 @@ function Start-Antigravity {
   }
 
   Save-InstanceRecord -Profile $Name -ProcessId $process.Id
-  Write-Log -Level 'info' -Message "Launched profile '$Name' with PID $($process.Id)."
-  Write-Host "Launched profile '$Name' (PID $($process.Id))."
+  Write-Log -Level 'info' -Message "Launched profile '$Name' (account: $Account) with PID $($process.Id)."
+  Write-Host "Launched profile '$Name' (account: $Account) (PID $($process.Id))."
 }
 
 Add-Type -TypeDefinition @"
@@ -1134,7 +1266,7 @@ function Start-Ui {
       [void]$profilesView.Items.Add($item)
     }
 
-    if ($profilesView.Items.Count -gt 0) {
+    if ($profilesView.Items.Count -gt 0 -and $null -ne $profilesView.Items[0]) {
       $profilesView.Items[0].Selected = $true
       $profilesView.Select()
     }
@@ -1328,7 +1460,7 @@ function Start-Ui {
       $profilesView.Focus()
       $e.SuppressKeyPress = $true
     }
-    elseif ($e.KeyCode -eq 'Down' -and $profilesView.Items.Count -gt 0) {
+    elseif ($e.KeyCode -eq 'Down' -and $profilesView.Items.Count -gt 0 -and $null -ne $profilesView.Items[0]) {
       $profilesView.Items[0].Selected = $true
       $profilesView.Focus()
       $e.SuppressKeyPress = $true
@@ -1375,8 +1507,8 @@ function Start-Ui {
     
     $lastActive = (Get-Settings).activeProfile
     if ((Get-Settings).restoreLastProfile -and $lastActive) {
-      $lastItem = $profilesView.Items | Where-Object { $_.Text -eq $lastActive }
-      if ($lastItem) {
+      $lastItem = $profilesView.Items | Where-Object { $_.Text -eq $lastActive } | Select-Object -First 1
+      if ($null -ne $lastItem) {
         $lastItem.Selected = $true
         Start-Sleep -Milliseconds 300
         & $switchSelectedProfile
@@ -1402,9 +1534,12 @@ Commands:
   profile list                           List profiles
   profile rename <old> <new>             Rename a profile
   profile delete <name> [-Force]         Delete a profile
-  credential set <name>                  Store encrypted credentials
-  credential clear <name>                Remove stored credentials
-  launch <name> [extra args...]          Launch a profile
+  credential set <name> --account <id>    Store encrypted credentials for account
+  credential clear <name> [--account <id>] Remove credentials (all or specific)
+  credential list <name>                 List stored accounts
+  credential set-default <name> --account <id> Set default account
+  credential clear-default <name>        Clear default account
+  launch <name> --account <id> [args...] Launch a profile with account
   switch <name>                          Activate running window or launch
   shortcut create <name> [hotkey]        Create a Start Menu shortcut
   tray                                   Run the system tray switcher
@@ -1534,15 +1669,55 @@ try {
     }
     'credential' {
       switch ($Args[1]) {
-        'set' { Set-ProfileCredential -Name $Args[2] }
-        'clear' { Clear-ProfileCredential -Name $Args[2] }
-        default { Fail 'Unknown credential command.' }
+        'set' {
+          if ($Args.Count -lt 3) { Fail 'Profile name is required.' }
+          $account = Get-OptionValue -Tokens $Args -Name 'account'
+          if (-not $account) { Fail 'Account name is required. Use --account <name>.' }
+          Set-ProfileCredential -Name $Args[2] -Account $account
+        }
+        'clear' {
+          if ($Args.Count -lt 3) { Fail 'Profile name is required.' }
+          $account = Get-OptionValue -Tokens $Args -Name 'account'
+          Clear-ProfileCredential -Name $Args[2] -Account $account
+        }
+        'list' {
+          if ($Args.Count -lt 3) { Fail 'Profile name is required.' }
+          $accounts = List-ProfileCredentials -Name $Args[2]
+          if ($accounts.Count -eq 0) {
+            Write-Host "No credentials stored for profile '$($Args[2])'."
+          } else {
+            $defaultCred = Get-DefaultCredential -Name $Args[2]
+            Write-Host "Credentials for profile '$($Args[2])':"
+            foreach ($acc in $accounts) {
+              $marker = if ($acc -eq $defaultCred) { ' (default)' } else { '' }
+              Write-Host "  - $acc$marker"
+            }
+          }
+        }
+        'set-default' {
+          if ($Args.Count -lt 3) { Fail 'Profile name is required.' }
+          $account = Get-OptionValue -Tokens $Args -Name 'account'
+          if (-not $account) { Fail 'Account name is required. Use --account <name>.' }
+          Set-DefaultCredential -Name $Args[2] -Account $account
+        }
+        'clear-default' {
+          if ($Args.Count -lt 3) { Fail 'Profile name is required.' }
+          Clear-DefaultCredential -Name $Args[2]
+        }
+        default { Fail 'Unknown credential command. Use: set, clear, list, set-default, clear-default.' }
       }
     }
     'launch' {
       if ($Args.Count -lt 2) { Fail 'Profile name is required.' }
-      $extra = if ($Args.Count -gt 2) { $Args[2..($Args.Count - 1)] } else { @() }
-      Start-Antigravity -Name $Args[1] -ExtraArguments $extra
+      $account = Get-OptionValue -Tokens $Args -Name 'account'
+      $extra = @()
+      $profileName = $Args[1]
+      for ($i = 2; $i -lt $Args.Count; $i++) {
+        if ($Args[$i] -notlike '--*') {
+          $extra += $Args[$i]
+        }
+      }
+      Start-Antigravity -Name $profileName -Account $account -ExtraArguments $extra
     }
     'switch' { Switch-ToProfile -Name $Args[1] | Out-Null }
     'shortcut' {
